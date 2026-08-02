@@ -1,0 +1,132 @@
+navsat_transform:
+  ros__parameters:
+    frequency: 10.0
+    delay: 2.0
+    magnetic_declination_radians: 0.0   
+    yaw_offset: 0.0  
+    zero_altitude: true
+    publish_filtered_gps: false
+    use_odometry_yaw: false
+    broadcast_utm_transform: true # utm even though deprecate because of error in RL parameter declare
+    broadcast_cartesian_transform_as_parent_frame: true # this is required when we convert GPS waypoint to map frame
+    wait_for_datum: true
+    # datum: [-31.980724295, 115.815946083 , 0.0 ] # flipped
+    #datum: [-31.97996317, 115.81716800, 0.0] #cricket building south corner
+    datum: [-31.596454, 115.668110, 0.0]  #Flying Fox Park  
+    #datum: [-31.597956, 115.655548, 0.0]  #Amberton Beach
+    
+# This is configuration for local pose estmation EKF node
+ekf_filter_node_odom:
+  ros__parameters:
+    two_d_mode: true
+    publish_tf: true
+    filter_type: ekf
+    frequency: 25.0
+    # sensor_timeout: 0.1
+
+    map_frame: map
+    odom_frame: odom                        # odometry frame
+    base_link_frame: base_link
+    world_frame: odom
+
+# ! subscribe to odom XOR imu, don't fuse data from same sensor, use wheel odom later on hopefully
+    odom0: imu/odometry
+    odom0_config: [ true,  true, false, # X , Y , Z 
+                    false, false, true, # roll , pitch ,yaw
+                    true,  true,  false,  # dX , dY , dZ
+                    false, false, false, # droll , dpitch ,dyaw
+                    false, false, false] # ddX , ddY , ddZ
+    odom0_relative: false
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    odom1: odometry/gps
+    odom1_config: [ true,  true, false, # X , Y , Z 
+                    false, false, false, # roll , pitch ,yaw
+                    false, false,  false,  # dX , dY , dZ+
+                    false, false, false, # droll , dpitch ,dyaw
+                    false, false, false] # ddX , ddY , ddZ
+    odom1_relative: false
+    odom1_differential: false
+    odom1_queue_size: 10
+
+
+    # imu0: imu/data
+    # imu0_config: [true,  true, false,  # X , Y , Z
+    #               false,  false,  true,  # roll , pitch ,yaw
+    #               false,  false, true,  # dX , dY , dZ
+    #               false,  false,  false,  # droll , dpitch ,dyaw
+    #               false,  false,  false] # ddX , ddY , ddZ
+    # imu0_relative: false                
+    # imu0_differential: false
+    # imu0_queue_size: 10
+    # imu0_remove_gravitational_acceleration: true
+
+    process_noise_covariance: [0.03, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.03, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.04, 0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.03, 0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.03, 0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.06, 0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.05, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.002, 0.0,    0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.002, 0.0,    0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.004, 0.0,    0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01, 0.0,    0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01, 0.0,
+                                0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.01]
+# This is configuration for global pose estmation EKF node
+ekf_filter_node_map:
+  ros__parameters:
+    two_d_mode: true
+    publish_tf: true
+    filter_type: ekf
+    frequency: 25.0
+    # sensor_timeout: 0.1
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map             
+
+    odom0: odometry/gps
+    odom0_config: [ true,  true, false, # X , Y , Z 
+                    false, false, false, # roll , pitch ,yaw
+                    false, false,  false,  # dX , dY , dZ
+                    false, false, false, # droll , dpitch ,dyaw
+                    false, false, false] # ddX , ddY , ddZ
+    odom0_relative: false
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    imu0: imu/data
+    imu0_config: [false,  false, false,  # X , Y , Z
+                  true,  false,  true,  # roll , pitch ,yaw
+                  false,  false, false,  # dX , dY , dZ
+                  false,  false,  false,  # droll , dpitch ,dyaw
+                  false,  false,  false] # ddX , ddY , ddZ
+    imu0_relative: false
+    imu0_differential: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    use_control: false
+
+    process_noise_covariance: [0.05, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.05, 0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.06, 0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.03, 0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.03, 0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.06, 0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.025, 0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.025, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.04, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.01, 0.0,    0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.01, 0.0,    0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.02, 0.0,    0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.01, 0.0,    0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.01, 0.0,
+                              0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,     0.0,     0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.015]      
+

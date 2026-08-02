@@ -1,0 +1,29 @@
+/lidar_localisation/front:
+  ros__parameters:
+    frame_id: lidar_localisation_front
+    hostname: "192.168.5.26"
+
+/lidar_localisation/rear:
+  ros__parameters:
+    frame_id: lidar_localisation_rear
+    hostname: "192.168.5.25"
+
+/lidar_safety/front_left:
+  ros__parameters:
+    frame_id: lidar_safety_front_left
+    hostname: "192.168.5.23"
+
+/lidar_safety/front_right:
+  ros__parameters:
+    frame_id: lidar_safety_front_right
+    hostname: "192.168.5.24"
+
+/lidar_safety/rear_right:
+  ros__parameters:
+    frame_id: lidar_safety_rear_right
+    hostname: "192.168.5.21"
+
+/lidar_safety/rear_left:
+  ros__parameters:
+    frame_id: lidar_safety_rear_left
+    hostname: "192.168.5.22"

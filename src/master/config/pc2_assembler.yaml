@@ -1,0 +1,29 @@
+/pointcloud2_assembler:
+  ros__parameters:
+    scan_topics: 
+      - /lidar_localisation/front/cloud 
+      - /lidar_localisation/rear/cloud
+      - /lidar/velodyne/front/cloud 
+      - /lidar/velodyne/rear/cloud 
+      - /lidar_safety/front_left/cloud 
+      - /lidar_safety/front_right/cloud 
+      - /lidar_safety/rear_left/cloud 
+      - /lidar_safety/rear_right/cloud
+    base_frame: base_link
+    frequency: 10
+
+
+/laserscan_converter:
+  ros__parameters:
+    target_frame: base_link
+    transform_tolerance: 0.05
+    min_height: 1.0  # 0.25 #0.75 # was 1.0
+    max_height: 4.0
+    angle_min: -3.1415  # -M_PI/2
+    angle_max: 3.1415  # M_PI/2
+    angle_increment: 0.0087  # M_PI/360.0
+    scan_time: 0.1
+    range_min: 0.5
+    range_max: 75.0
+    use_inf: True
+    inf_epsilon: 1.0

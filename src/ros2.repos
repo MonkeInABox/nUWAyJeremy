@@ -1,0 +1,26 @@
+repositories:
+  gps_waypoint_follower:
+    type: git
+    url: git@github.com:uwa-rev/gps_waypoint_follower.git
+    version: humble
+  sbg_ros2_driver:
+    type: git
+    url: git@github.com:uwa-rev/sbg_ros2_driver.git
+    version: humble
+  sick_scan_xd:
+    type: git
+    url: https://github.com/SICKAG/sick_scan_xd.git
+    version: 2.8.14
+  # msgpack11:
+  #   type: git
+  #   url: https://github.com/SICKAG/msgpack11.git
+  libsick_ldmrs:
+    type: git
+    url: https://github.com/SICKAG/libsick_ldmrs.git
+  # costmap_converter:
+  #   type: git
+  #   url: https://github.com/rst-tu-dortmund/costmap_converter
+  #   version: ros2
+  basic_mobile_robot:
+    type: git
+    url: git@github.com:innoc3ntt/basic_mobile_robot.git

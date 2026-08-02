@@ -1,0 +1,43 @@
+/**:
+  ros__parameters:
+    connection_type: 'tcp'
+    # connection_type: 'serial'
+    device: 192.168.5.41:2000
+    verbose: true
+    # imu_rate: 100.0
+    # imu_sample_rate: -1.0
+    # publish_clocksteering: false
+    # publish_gpgsa: false
+    # publish_gpgsv: false
+    # publish_gphdt: false
+
+    # publish_imu_messages: false
+
+    # publish_invalid_gpsfix:
+    publish_novatel_positions: true
+    # publish_novatel_xyz_positions: false 
+    # publish_novatel_utm_positions: false
+    publish_novatel_velocity: true
+    # publish_novatel_heading2: false
+    # publish_novatel_dual_antenna_heading: false
+    publish_novatel_psrdop2: true
+    # publish_nmea_messages: false
+    # publish_range_messages: false
+    # publish_time_messages: false
+    # publish_time_reference: false
+    # publish_trackstat: false
+    # publish_diagnostics: true
+    # publish_sync_diagnostic: true
+    # publish_dual_antenna_diagnostic: false # Following dual antenna heading
+    polling_period: 0.2 # Default: 0.05
+    # expected_rate: 20
+    # reconnect_delay_s:
+
+    use_binary_messages: true
+    span_frame_to_ros_frame: true
+    # imu_frame_id: "imu"
+    frame_id: "gps"
+    wait_for_sync: true
+    # loop:
+    # gpsfix_sync_tol: 
+    # loop:

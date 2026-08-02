@@ -1,0 +1,19 @@
+/**: # configuration for sick_scan2_lms_1xx: For compatibility with ros versions previous to foxy, node and parameter name changed to sick_scan2 for all supported scanner. The type of scanner is configured by scanner_name only.
+  ros__parameters:
+    scanner_name : sick_lms_1xx
+    scanner_type: sick_lms_1xx
+    port : "2112"
+    min_ang : -2.35619449 #in lidar cordinate frame  see ../doc/3d_coordinate_system_comp.png
+    max_ang : 2.35619449 #in lidar cordinate frame  see ../doc/3d_coordinate_system_comp.png
+    intensity: true
+    intensity_resolution_16bit: false
+    use_binary_protocol: true # https://github.com/SICKAG/sick_scan2#known-issue
+    range_max: 25.0
+    timelimit: 5
+ 
+    tf_publish_rate: 0.0 # tf publish to map, 0.0 to disable
+    # activating field monitor 
+    activate_lferec: false # lferec message
+    activate_lidoutputstate: false # lidoutput message
+    activate_lidinputstate: false # lidinput message
+    range_filter_handling: 5
