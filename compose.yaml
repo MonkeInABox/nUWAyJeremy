@@ -1,0 +1,396 @@
+version: '2'
+services:
+  lowlevel:
+    image: ${IMAGE}:${TAG}
+    container_name: lowlevel
+    network_mode: host
+    #network_mode: bridge
+    # devices: [ "dev/ttySBG:/dev/ttySBG" ]
+    #devices: [ "dev/ttyUSB0:/dev/ttyUSB0" ]
+    build:
+      context: .
+      # ssh: [ "default=$HOME/.ssh/id_rsa" ]
+      target: staging #pull from the current folder
+      #target: prod #pull from github
+    tty: True        # docker run -t
+    stdin_open: True # docker run -i
+    #command: ros2 launch master lowlevel.launch.py
+    command: ros2 launch master lowlevel.launch.py params_file:=/lowlevel_config
+    configs:
+      - lowlevel_config
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+      - type: bind
+        source: /dev
+        target: /dev
+    device_cgroup_rules:
+      - 'c 188:* rmw'
+      - 'c 189:* rmw'
+
+  rviz:
+    #image: ${IMAGE}
+    image: ${IMAGE}:${TAG}
+    container_name: rviz
+    network_mode: host
+    #networks: 
+    #  - humble_bridge
+    #  - host
+    privileged: True # to allow forwarding of X11 display for rviz GUI
+    environment:
+      - DISPLAY
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+    command: ros2 launch nav2_bringup rviz_launch.py rviz_config:=/rviz_config
+    configs:
+      - rviz_config
+
+  nav2:
+    image: ${IMAGE}:${TAG}
+    container_name: nav2
+    network_mode: host
+    #network_mode: bridge
+    depends_on: [ "lowlevel", "rviz" ,"gps"] 
+    command: ros2 launch master nav2_launch.py map:=./src/master/maps/${MAP} params_file:=/nav2_config
+    # command: ros2 launch master slam_launch.py params_file:=/slam_params
+    configs:
+      - nav2_config
+      - slam_params
+    volumes:
+      - type: bind
+        source: ./mount
+        target: $WORKSPACE/mount
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+      
+  gps:
+    #image: ${IMAGE}:${WAYPOINT_TAG}
+    image: ${IMAGE}:${TAG}
+    container_name: gps
+    #ports:
+    #    - "8650:8650"
+    #    - "8651:8651"
+    network_mode: host
+    #network_mode: bridge
+    depends_on: [ "lowlevel", "rviz" ]
+    command: ros2 launch master gps_launch.py params_file:=/ekf_config
+    #build:
+    #  context: .
+    #  ssh: [ "default=$HOME/.ssh/id_rsa" ]
+    #  target: staging #pull from the current folder
+    configs:
+      - ekf_config
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+    #  - type: bind
+    #    source: ./mount
+    #    target: $WORKSPACE/mount
+
+  # gps_location:
+  #   image: ${IMAGE}:${TAG}
+  #   container_name: gps_location
+  #   depends_on:
+  #     - "gps"
+  #   command: ros2 run python_nodes gps_location
+
+  # waypoint_cli:
+  #   image: ${IMAGE}:${TAG}
+  #   container_name: waypoint_cli
+  #   #network_mode: host
+  #   #network_mode: bridge
+  #   depends_on: [ "nav2","can_bridge"]
+  #   command: ros2 run python_nodes bus_follow_path
+  #   #command: tail -F anything 
+  # #  build:
+  # #    context: .
+  # #    ssh: [ "default=$HOME/.ssh/id_rsa" ]
+  # #    target: staging 
+  #   volumes:
+  #     - type: bind
+  #       source: ./mount
+  #       target: $WORKSPACE/mount
+
+  can_bridge:
+     image: ${IMAGE}:${TAG}
+     container_name: can_bridge
+     #expose:
+     #   - "8650"
+     network_mode: host
+     depends_on: [ "joy", "incidentRecorder"]
+    #network_mode: bridge
+     command: ros2 run python_nodes can_bridge
+     volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+
+  all_lidars:
+    image: ${IMAGE}:${TAG}
+    container_name: all_lidars
+    network_mode: host
+    #network_mode: bridge
+    command: ros2 launch master all_lidars.launch.py
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+
+  #velodyne_lidar:
+  #  image: ${IMAGE}:${TAG}
+  #  container_name: velodyne_lidar
+  #  network_mode: host
+  #  command: ros2 launch master velodyne_lidars.launch.py
+  
+  #sick_lidar:
+  #  image: ${IMAGE}
+  #  container_name: sick_lidar
+  #  network_mode: host
+  #  command: ros2 launch master sick_lidars.launch.py
+  
+  #safety_lidar:
+  #  image: ${IMAGE}
+  #  container_name: safety_lidar
+  #  #network_mode: host
+  #  command: ros2 launch master safety_lidars_old.launch.py
+  #  #profiles: [ "lidar" ]
+
+  # foxglove_websocket:
+  #   image: ${IMAGE}
+  #   container_name: foxglove_websocket
+  #   # network_mode: host
+  #   command: ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+  #   #profiles: [ "websocket" ]
+
+  keepout:
+    image: ${IMAGE}:${TAG}
+    container_name: keepout
+    network_mode: host
+    command: ros2 launch master keepout_launch.py mask:=./src/master/maps/keepout_mask.yaml
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+  
+
+  joy:
+    #image: ${IMAGE}
+    image: ${IMAGE}:${TAG}
+    container_name: joy
+    network_mode: host
+    #deploy:
+    #  replicas: 5
+    #  resources:
+    #    limits:
+    #      cpus: "0.1"
+    #      memory: 50M
+    #restart_policy:
+    #  condition: on-failure
+    #ports:
+    #  - 3281:3281
+    #  - 3668:3668
+    #networks: 
+    #  - ingress
+    #  - host
+    # devices: [ "/dev/input/js0:/dev/input/js0" ]
+    command: ros2 launch master controller.launch.py
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+      - type: bind
+        source: /dev/input
+        target: /dev/input
+    device_cgroup_rules:
+      - 'c 13:* rmw'
+
+#   can:
+#     image: ${IMAGE}
+#     container_name: can_testing
+#     network_mode: host
+#     command: ros2 run testing listener
+#     devices: [ "/dev/input/js0:/dev/input/js0" ]
+#     privileged: True # to allow forwarding of X11 display for rviz GUI
+
+  recorder: # regular recorder for DOT report  
+    image: ${IMAGE}:${TAG}
+    container_name: recorder
+    depends_on: [ "lowlevel", "gps", "nav2"]
+    #command: bash -c "cd ../incidentRecord && ros2 bag record -s mcap -a --compression-mode file --compression-format zstd" 
+    #command: bash -c "cd ../incidentRecord && ros2 bag record -s mcap /sbg/gps_pos /joy_cmd_vel /odometry/global /candata /lidar_safety/front_left/cloud /lidar_safety/front_right/cloud /lidar_safety/rear_left/cloud /lidar_safety/rear_right/cloud /lidar/localisation_merged/cloud"
+    # command: bash -c "cd ../incidentRecord && ros2 bag record -s mcap /sbg/gps_pos"
+    command: bash -c "cd ../slamRosbag && ros2 bag record -s mcap /map"
+    # record /yolov7/bbox /yolov7/kpt for detections
+    network_mode: host
+    #expose:
+    #    - "8650"
+    #network_mode: bridge
+    volumes:
+    - type: bind
+      source: ../incidentRecord
+      target: $WORKSPACE/../incidentRecord
+    - type: bind
+      source: /dev/shm
+      target: /dev/shm
+
+  incidentRecorder: # incident recorder snapshot
+    image: ${IMAGE}:${TAG}
+    container_name: incidentRecorder
+    depends_on: [ "lowlevel", "gps", "nav2"]
+    command: bash -c "cd ../snapshotTest && ros2 bag record -s mcap --snapshot-mode -a" 
+    network_mode: host
+    #network_mode: bridge
+    volumes:
+    - type: bind
+      source: ../snapshotTest
+      target: $WORKSPACE/../snapshotTest
+    - type: bind
+      source: /dev/shm
+      target: /dev/shm
+
+  controllerBattery: # incident recorder snapshot
+    image: ${IMAGE}:${TAG}
+    container_name: controllerBattery
+    # depends_on: [ ]
+    command: ros2 run python_nodes battery_node
+    network_mode: host
+    privileged: true
+    #network_mode: bridge
+    volumes:
+    - type: bind
+      source: /sys/class/power_supply
+      target: /sys/class/power_supply
+    - type: bind
+      source: /dev/shm
+      target: /dev/shm
+
+  speechNode: # converts speech to drive commands
+    image: ${IMAGE}:${TAG}
+    container_name: speechNode
+    # depends_on: [ "lowlevel", "gps", "nav2"]
+    devices: [ "/dev/snd:/dev/snd" ]
+    command: ros2 run python_nodes speech_node 
+    network_mode: host
+    #network_mode: bridge
+    volumes:
+    - type: bind
+      source: /dev/shm
+      target: /dev/shm
+
+  rvizOverlay:
+    image: ${IMAGE}:${TAG}
+    container_name: rvizOverlay
+    network_mode: host
+    depends_on: ["rviz", "lowlevel"]
+    command: ros2 launch master rvizOverlay.launch.py
+    #network_mode: bridge
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+
+  stamped_conversion:
+    image: ${IMAGE}:${TAG}
+    container_name: stamped_conversion
+    network_mode: host
+    depends_on: ["rviz", "lowlevel", "can_bridge"]
+    command: ros2 run python_nodes stamped_conversion
+    #network_mode: bridge
+    volumes:
+      - type: bind
+        source: /dev/shm
+        target: /dev/shm
+
+  # main:
+  #   image: humble_nuway2_ros2_ws:v5
+  #   container_name: main
+  #   network_mode: host
+  #   #network_mode: bridge
+  #   privileged: True # to allow forwarding of X11 display for rviz GUI
+  #   environment:
+  #     - DISPLAY
+  #   volumes:
+  #     - /tmp/.X11-unix:/tmp/.X11-unix:rw
+  #     - type: bind
+  #       source: ./mount
+  #       target: $WORKSPACE/mount
+  #     - type: bind
+  #       source: ../incidentRecord
+  #       target: $WORKSPACE/../incidentRecord
+
+  #   devices: 
+  #     - "dev/ttySBG:/dev/ttySBG" 
+  #     - "/dev/input/js0:/dev/input/js0"
+  #   build:
+  #     context: .
+  #     ssh: [ "default=$HOME/.ssh/id_rsa" ]
+  #     target: staging #pull from the current folder
+  #     #target: prod #pull from github
+  #   tty: True        # docker run -t
+  #   stdin_open: True # docker run -i
+  #   #command: ros2 launch master lowlevel.launch.py
+  #   command: bash -c "ros2 launch master controller.launch.py  & \
+  #     ros2 launch master lowlevel.launch.py params_file:=/lowlevel_config & \
+  #     ros2 launch nav2_bringup rviz_launch.py rviz_config:=/rviz_config & \
+  #     ros2 launch gps_waypoint_follower gps_launch.py params_file:=/ekf_config & \
+  #     ros2 launch gps_waypoint_follower server_launch.py & \
+  #     ros2 launch master nav2_launch.py map:=./src/master/maps/${MAP} params_file:=/nav2_config & \
+  #     ros2 launch gps_waypoint_follower client_launch.py & \
+  #     ros2 run python_nodes can_bridge & \
+  #     ros2 launch master all_lidars.launch.py & \
+  #     ros2 launch master controller.launch.py"
+  #     #cd ../incidentRecord && ros2 bag record -s mcap -a"
+  #   configs:
+  #     - lowlevel_config
+  #     - rviz_config
+  #     - ekf_config
+  #     - nav2_config
+  
+configs:
+  lowlevel_config:
+    file: ./src/master/config/sbg_params.yaml
+  rviz_config:
+    file: ./src/master/rviz/nuway2_v4.rviz
+    #file: ./rviz_config.rviz
+  nav2_config:
+    file: ./src/master/config/nav2_params.yaml
+  ekf_config:
+    # file: ./src/master/config/ekf_params.yaml
+    file: ./src/master/config/ekf_params2.yaml
+  slam_params:
+    file: ./src/master/config/slam_params.yaml
+    # volumes:
+    #   db-data:
+    #     driver: flocker
+    #     driver_opts:
+    #       size: "10GiB"
+
+    # secrets:
+    #   server-certificate:
+    #     external: True
+
+    # networks:
+    #   # The presence of these objects is sufficient to define them
+    #   front-tier: {}
+    #   back-tier: {}
+# networks:
+#   ingress:
+#     driver: overlay
+#     ipam:
+#       #driver: default
+#       config:
+#         - subnet: 192.168.5.0/24
+          #ip_range: 172.28.5.30/24
+          #gateway: 127.0.0.1
+          #aux_addresses:
+          #  host1: 192.168.5.30
+          #  host2: 172.28.1.6
+          #  host3: 172.28.1.7
+#  humble_host:
+#    driver: host

@@ -1,0 +1,19 @@
+alias rebuild="colcon build --packages-select gps_waypoint_follower master"
+alias 2="source ./install/setup.zsh"
+alias logger="ros2 launch gps_waypoint_follower logger_launch.py params_file:=$WORKSPACE/src/master/config/gps_params.yml"
+alias client="ros2 launch gps_waypoint_follower client_launch.py params_file:=$WORKSPACE/src/master/config/gps_params.yml"
+
+# dev aliases
+alias v5="ros2 launch basic_mobile_robot basic_mobile_bot_v5.launch.py params_file:=$WORKSPACE/src/basic_mobile_robot/params/nav2_params.yaml"
+alias gps_demo="ros2 launch gps_waypoint_follower demo_launch.py params_file:=$WORKSPACE/src/gps_waypoint_follower/gps_waypoint_follower/params/ekfs_demo.yaml"
+alias demo="ros2 launch master demo_launch.py nav2_params:=$WORKSPACE/src/basic_mobile_robot/params/nav2_params.yaml"
+alias rosbridge="ros2 launch rosbridge_server rosbridge_websocket_launch.xml"
+
+
+#launch aliases
+alias nav2="ros2 launch master nav2_launch.py map:=$WORKSPACE/src/master/maps/main.yaml params_file:=$WORKSPACE/src/master/config/nav2_params.yaml"
+alias gps="ros2 launch gps_waypoint_follower gps_launch.py params_file:=$WORKSPACE/src/master/config/ekf_params.yaml"
+alias rviz="ros2 launch nav2_bringup rviz_launch.py rviz_config:=$WORKSPACE/src/master/rviz/lidars.rviz"
+alias low="ros2 launch master lowlevel.launch.py"
+alias interface="ros2 launch master low_level_interface.launch.py"
+alias keepout="ros2 launch master keepout_launch.py"
