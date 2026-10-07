@@ -1,3 +1,5 @@
+# hello this is something to run PointCAM, use python3 ./shuttleBusTrainCAM.py --adversarial --pointcam_checkpoint_path path/to/pointcam.pt
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -9,6 +11,7 @@ from PIL import Image
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from modelCAM import PointCAMBackbone
+from pointcam.utils.losses import DiversityLoss, SparsityLoss
  
 from torch.utils.tensorboard import SummaryWriter
  
@@ -99,6 +102,13 @@ class drivePointCAM(nn.Module):
                 nn.LayerNorm(int(cls_dim / 8)),
                 nn.ELU(),
                 nn.Linear(int(cls_dim / 8), 1)).to(device=self.device)
+
+        pointcam = self.vision_model.pointcam
+        self.mask_sparsity_loss = SparsityLoss(
+            pointcam.n_masks,
+            beta=pointcam.cfg.model.sparsity_beta,
+        )
+        self.mask_diversity_loss = DiversityLoss()
  
     def forward(self, front_cloud, rear_cloud):
         # print(front_cloud.shape)
@@ -121,6 +131,106 @@ class drivePointCAM(nn.Module):
         # print(x.shape)
         return speed[:,0], angle[:,0]
         # return x
+
+    def forward_masked(self, front_cloud, rear_cloud, detach_masks=False):
+        full_lidar = torch.concat([front_cloud, rear_cloud], axis=1).float()
+        features, masks = self.vision_model.forward_masked(
+            full_lidar,
+            detach_masks=detach_masks,
+        )
+        speed = self.mlp_head1(features).squeeze(-1)
+        angle = self.mlp_head2(features).squeeze(-1)
+        return speed, angle, masks
+
+    @staticmethod
+    def _set_trainable(module, enabled):
+        for parameter in module.parameters():
+            parameter.requires_grad_(enabled)
+
+    @staticmethod
+    def _task_loss(speed, angle, speed_target, angle_target, criterion):
+        losses = [
+            criterion(speed_view, speed_target)
+            + criterion(angle_view, angle_target)
+            for speed_view, angle_view in zip(speed.unbind(0), angle.unbind(0))
+        ]
+        return torch.stack(losses).mean()
+
+    def adversarial_step(
+        self,
+        front_cloud,
+        rear_cloud,
+        speed_target,
+        angle_target,
+        criterion,
+        optimizer,
+    ):
+        pointcam = self.vision_model.pointcam
+        original_grad_states = [
+            (parameter, parameter.requires_grad)
+            for parameter in self.parameters()
+        ]
+
+        try:
+            self._set_trainable(
+                pointcam.student,
+                not self.vision_model.freeze_encoder,
+            )
+            self._set_trainable(pointcam.masknet, False)
+            self._set_trainable(self.mlp_head1, True)
+            self._set_trainable(self.mlp_head2, True)
+
+            optimizer.zero_grad(set_to_none=True)
+            speed, angle, _ = self.forward_masked(
+                front_cloud,
+                rear_cloud,
+                detach_masks=True,
+            )
+            encoder_loss = self._task_loss(
+                speed,
+                angle,
+                speed_target,
+                angle_target,
+                criterion,
+            )
+            encoder_loss.backward()
+            optimizer.step()
+
+            self._set_trainable(pointcam.student, False)
+            self._set_trainable(pointcam.masknet, True)
+            self._set_trainable(self.mlp_head1, False)
+            self._set_trainable(self.mlp_head2, False)
+
+            optimizer.zero_grad(set_to_none=True)
+            speed, angle, masks = self.forward_masked(
+                front_cloud,
+                rear_cloud,
+                detach_masks=False,
+            )
+            mask_task_loss = self._task_loss(
+                speed,
+                angle,
+                speed_target,
+                angle_target,
+                criterion,
+            )
+            mask_objective = (
+                -mask_task_loss
+                + pointcam.sparsity_weight * self.mask_sparsity_loss(masks)
+                + pointcam.diversity_weight * self.mask_diversity_loss(masks)
+            )
+            mask_objective.backward()
+            optimizer.step()
+
+            return {
+                "loss": encoder_loss.detach(),
+                "mask_loss": mask_task_loss.detach(),
+                "speed": speed.detach().mean(dim=0),
+                "angle": angle.detach().mean(dim=0),
+            }
+        finally:
+            for parameter, requires_grad in original_grad_states:
+                parameter.requires_grad_(requires_grad)
  
 padding = 4300
  
@@ -177,217 +287,7 @@ def collate_fn(batch):
     # data1 = tensor_transform(data1)
     data2 = torch.stack([item[1] for item in batch])
     # data2 = tensor_transform(data2)
-    label1 = [item[2] for item in batch]"""
-Hyperparameter sweep runner for shuttleBusTrainCAM.py.
-
-Launches one training run per combination of hyperparameters (each in a
-clean subprocess, so a crash or CUDA OOM in one config can't corrupt the
-next). Each run appends its own row to a shared results CSV
-(shuttleBusTrainCAM.py --results_csv ...), so you'll see results accumulate
-as the sweep progresses rather than only at the very end.
-
-Usage:
-    python3 sweep.py
-
-Edit SWEEP_GRID / SWEEP_LIST below to control what gets tested, and the
-constants under CONFIG to control paths, epochs, and where logs/results go.
-"""
-
-import csv
-import itertools
-import os
-import subprocess
-import sys
-import time
-from datetime import datetime
-
-# ============================== CONFIG =======================================
-
-TRAIN_SCRIPT = "shuttlebusTrainCAMMulti.py"   # path to your training script
-MODEL_TYPE = "lane_following"            # positional arg the script expects
-
-RESULTS_CSV = "sweep_results.csv"        # shared results file (appended to by each run)
-LOG_DIR = "sweep_logs"                   # per-run stdout/stderr logs
-FAILURES_CSV = "sweep_failures.csv"      # runs that crashed/errored get logged here instead
-
-# Epochs per sweep trial. Keep this LOW for an initial sweep (you're comparing
-# configs relative to each other, not training a final model) then re-run the
-# best config(s) with a full epoch count separately.
-EPOCHS_PER_RUN = 10
-
-# Optional: hard per-run timeout in seconds, in case a config hangs. None = no timeout.
-RUN_TIMEOUT_SEC = None
-
-# ============================== SWEEP CONFIGURATION ===========================
-# A curated one-at-a-time sweep: start from a sane baseline config, then vary
-# exactly one hyperparameter per run relative to that baseline. This covers
-# every hyperparameter shuttleBusTrainCAM.py exposes (including weight_decay,
-# gamma, and batch_size, which earlier sweeps didn't touch) in far fewer runs
-# than a full grid search would need -- a full grid over these 8 axes would
-# be thousands of combinations; this is 16.
-#
-# Once you see which axis(es) actually move the metrics, do a focused
-# second-round grid over just those 1-2 axes with more epochs per run.
-
-BASELINE = {
-    "n_patches": 64,
-    "points_per_patch": 32,
-    "freeze_encoder": False,
-    "drop_path_rate": 0.1,
-    "lr": 1e-4,
-    "weight_decay": 0.05,
-    "gamma": 0.8,
-    "batch_size": 70,
-}
-
-SWEEP_LIST = [
-    {**BASELINE, "run_label": "baseline"},
-
-    # --- encoder / patching -----------------------------------------------
-    {**BASELINE, "run_label": "freeze_encoder", "freeze_encoder": True},
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-
-    # --- regularization ------------------------------------------------------
-    {**BASELINE, "run_label": "drop_path_0.0", "drop_path_rate": 0.0},
-    {**BASELINE, "run_label": "drop_path_0.3", "drop_path_rate": 0.3},
-    {**BASELINE, "run_label": "weight_decay_0.0", "weight_decay": 0.0},
-    {**BASELINE, "run_label": "weight_decay_0.2", "weight_decay": 0.2},
-
-    # --- learning rate magnitude -----------------------------------------------
-    {**BASELINE, "run_label": "lr_1e-3", "lr": 1e-3},
-    {**BASELINE, "run_label": "lr_1e-5", "lr": 1e-5},
-
-    # --- learning rate schedule (gamma = ReduceLROnPlateau decay factor) -------
-    # Spread from aggressive (small gamma = big LR cuts) to gentle (near 1 =
-    # barely decays). 1.0 would mean no decay at all, so we stop just short of it.
-    {**BASELINE, "run_label": "gamma_0.3_very_aggressive", "gamma": 0.3},
-    {**BASELINE, "run_label": "gamma_0.5_aggressive", "gamma": 0.5},
-    {**BASELINE, "run_label": "gamma_0.6", "gamma": 0.6},
-    {**BASELINE, "run_label": "gamma_0.7", "gamma": 0.7},
-    # gamma_0.8 is the baseline run above -- no need to repeat it here.
-    {**BASELINE, "run_label": "gamma_0.9", "gamma": 0.9},
-    {**BASELINE, "run_label": "gamma_0.95_gentle", "gamma": 0.95},
-    {**BASELINE, "run_label": "gamma_0.99_very_gentle", "gamma": 0.99},
-
-    # --- batch size -----------------------------------------------------------
-    # Larger batch sizes use more GPU memory -- drop batch_size_128 if you hit OOM.
-    {**BASELINE, "run_label": "batch_size_32", "batch_size": 32},
-    {**BASELINE, "run_label": "batch_size_128", "batch_size": 128},
-
-    # --- combined guess: apply whichever individual changes looked best -------
-    # Edit this once you've seen the results above, then re-run just this one
-    # with a much higher --epochs for a real candidate model.
-    {**BASELINE, "run_label": "combined_guess"},
-]
-
-# If you'd rather do a full grid search over specific axes instead of this
-# curated list, set SWEEP_LIST = None and fill in SWEEP_GRID -- every
-# combination of the lists below will be tried (multiplies out fast).
-SWEEP_GRID = {
-    "n_patches": [32, 64, 128],
-    "points_per_patch": [16, 32, 64],
-    "drop_path_rate": [0.0, 0.1, 0.2],
-    "lr": [1e-4, 5e-5],
-    "freeze_encoder": [False, True],
-}
-
-# ===============================================================================
-
-
-def build_configs():
-    if SWEEP_LIST is not None:
-        return list(SWEEP_LIST)
-    keys = list(SWEEP_GRID.keys())
-    combos = itertools.product(*(SWEEP_GRID[k] for k in keys))
-    return [dict(zip(keys, combo)) for combo in combos]
-
-
-def config_to_argv(config, run_name):
-    config = {k: v for k, v in config.items() if k != "run_label"}
-    argv = [
-        sys.executable, TRAIN_SCRIPT, MODEL_TYPE,
-        "--epochs", str(EPOCHS_PER_RUN),
-        "--results_csv", RESULTS_CSV,
-        "--run_name", run_name,
-    ]
-    for key, value in config.items():
-        flag = f"--{key}"
-        if isinstance(value, bool):
-            if value:
-                argv.append(flag)  # store_true flags: only pass when True
-        else:
-            argv.extend([flag, str(value)])
-    return argv
-
-
-def log_failure(run_name, config, returncode, log_path):
-    config = {k: v for k, v in config.items() if k != "run_label"}
-    file_exists = os.path.exists(FAILURES_CSV)
-    row = {
-        "run_name": run_name,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "returncode": returncode,
-        "log_file": log_path,
-        **config,
-    }
-    with open(FAILURES_CSV, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if not file_exists:
-            w.writeheader()
-        w.writerow(row)
-
-
-def main():
-    os.makedirs(LOG_DIR, exist_ok=True)
-    configs = build_configs()
-
-    print(f"Sweep: {len(configs)} run(s) planned, {EPOCHS_PER_RUN} epoch(s) each")
-    print(f"Results -> {RESULTS_CSV}   Failures -> {FAILURES_CSV}   Logs -> {LOG_DIR}/")
-
-    for i, config in enumerate(configs, start=1):
-        label = config.get("run_label", f"config{i}")
-        run_name = f"run{i:03d}_{label}"
-        log_path = os.path.join(LOG_DIR, f"{run_name}.log")
-
-        argv = config_to_argv(config, run_name)
-
-        print(f"\n[{i}/{len(configs)}] {run_name}")
-        print(f"  command: {' '.join(argv)}")
-
-        start = time.time()
-        with open(log_path, "w") as log_file:
-            try:
-                result = subprocess.run(
-                    argv,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    timeout=RUN_TIMEOUT_SEC,
-                )
-                returncode = result.returncode
-            except subprocess.TimeoutExpired:
-                print(f"  TIMED OUT after {RUN_TIMEOUT_SEC}s -- logged as failure")
-                log_failure(run_name, config, returncode="timeout", log_path=log_path)
-                continue
-
-        elapsed = time.time() - start
-
-        if returncode == 0:
-            print(f"  done in {elapsed:.1f}s")
-        else:
-            print(f"  FAILED (exit code {returncode}) -- see {log_path}")
-            log_failure(run_name, config, returncode, log_path)
-
-    print("\nSweep complete.")
-    if os.path.exists(RESULTS_CSV):
-        print(f"Results: {RESULTS_CSV}")
-    if os.path.exists(FAILURES_CSV):
-        print(f"Some runs failed -- see {FAILURES_CSV} and {LOG_DIR}/ for details")
-
-
-if __name__ == "__main__":
-    main()
+    label1 = [item[2] for item in batch]
     label2 = [item[3] for item in batch]
     return data1, data2, label1, label2
  
@@ -516,11 +416,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Load model from checkpoint")
     parser.add_argument("--load_model", action="store_true")
     parser.add_argument("--fine_tune_model", action="store_true")
+    parser.add_argument("--adversarial", action="store_true")
+    parser.add_argument("--pointcam_checkpoint_path", default=pointcam_checkpoint_path)
     parser.add_argument("model_type", default="lane_following", type=str, nargs='?')
+
+    args = parser.parse_args()
  
  
     model = drivePointCAM(
-        checkpoint_path=pointcam_checkpoint_path,
+        checkpoint_path=args.pointcam_checkpoint_path,
         n_patches=64,
         points_per_patch=32,
         freeze_encoder=False,
@@ -528,8 +432,6 @@ if __name__ == "__main__":
     )
  
     # img = torch.randn(1, 3, 200, 66)
- 
-    args = parser.parse_args()
  
     if args.load_model:
         print("loading model")
@@ -785,21 +687,29 @@ if __name__ == "__main__":
                 label2 = label2.to(device)
                 # print(data.shape)
  
-                output1, output2 = model(data1, data2)
-                # print(output1.shape)
-                # print(label1.shape)
-                loss1 = criterion(output1, label1)
-                loss2 = criterion(output2, label2)
- 
-                loss = loss1 + loss2
- 
+                if args.adversarial:
+                    step_result = model.adversarial_step(
+                        data1,
+                        data2,
+                        label1,
+                        label2,
+                        criterion,
+                        optimizer,
+                    )
+                    output1 = step_result["speed"]
+                    output2 = step_result["angle"]
+                    loss = step_result["loss"]
+                else:
+                    output1, output2 = model(data1, data2)
+                    loss1 = criterion(output1, label1)
+                    loss2 = criterion(output2, label2)
+                    loss = loss1 + loss2
+
+                    optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    optimizer.step()
+
                 total_epoch_loss += loss.item()
- 
-                # writer.add_scalar("Loss/Train", loss, epoch)
- 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
  
                 acc1 = (abs(output1 - label1) < (0.27 / 5.4)).float().sum()
                 acc2 = (abs(output2 - label2) < (0.015 / 0.3)).float().sum()

@@ -34,7 +34,8 @@ class PointCAMBackbone(nn.Module):
                 cfg=cfg if cfg is not None else OmegaConf.structured(PointCAMConfig)
             )
  
-        self.pointcam = self.pointcam.to(device="cuda")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.pointcam = self.pointcam.to(device=device)
  
         self.freeze_encoder = freeze_encoder
         if self.freeze_encoder:
@@ -51,9 +52,12 @@ class PointCAMBackbone(nn.Module):
             self.pointcam.eval()
         return self
  
-    def forward(self, pts):
+    def make_patched_cloud(self, pts):
         xyz = self.patch_finder(pts.contiguous())
-        xyz = xyz.to(pts.device)
+        return xyz.to(pts.device)
+
+    def forward(self, pts):
+        xyz = self.make_patched_cloud(pts)
  
         if self.freeze_encoder:
             with torch.no_grad():
@@ -62,3 +66,17 @@ class PointCAMBackbone(nn.Module):
             features = self.pointcam(xyz)
  
         return features  # (B, 768)
+
+    def forward_masked(self, pts, detach_masks: bool = False):
+        xyz = self.make_patched_cloud(pts)
+        mask_probs = self.pointcam.masknet(xyz)
+        masks = mask_probs.permute(2, 0, 1).unsqueeze(-1)
+
+        if detach_masks:
+            masks = masks.detach()
+
+        features = torch.stack(
+            [self.pointcam.student(xyz, mask=mask, pool=True) for mask in masks],
+            dim=0,
+        )
+        return features, masks
