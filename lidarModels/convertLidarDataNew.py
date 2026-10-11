@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Jeremy Butson, adapting Quirke-Brown, the University of Western Australia REV Project nUWAy shuttle driving
+
  
 import os
 import sys
@@ -8,8 +10,7 @@ import argparse
 import numpy as np
 from collections import deque
 from os.path import join, exists, dirname
- 
-# ROS 2 & Sensor Processing Libraries
+
 import sensor_msgs_py.point_cloud2 as pc2
 from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
@@ -18,7 +19,7 @@ from numpy.lib.recfunctions import structured_to_unstructured
  
  
 class db3Parser:
-    """Parser for ROS2 SQLite3 (.db3) bag files (Stub implementation)."""
+    """Parser for ROS2 SQLite3 (.db3) bag files"""
     def __init__(self, file: str) -> None:
         self.file = file
         raise NotImplementedError("db3 parsing is not fully implemented in this script.")
@@ -87,6 +88,11 @@ class BagFileParserFactory:
         print("Metadata parsing complete.")
  
     def get_file_type(self) -> str:
+        """checks whether mcap or db3
+
+        Returns:
+            str: extension
+        """
         extension = self.bag_file.split(".")[-1].lower()
         if extension in ["db3", "mcap"]:
             return extension
@@ -108,6 +114,13 @@ def get_topic(topic_list, pre_timestamp, post_timestamp):
  
  
 def extract_ros2bag_lidar_cmd(rosbag_path: str, time_str: str, output_path: str):
+    """extracts the LiDAR s and cmd_vel and steering
+
+    Args:
+        rosbag_path (str): path rosbag is stored
+        time_str (str): time passed
+        output_path (str): output path of npys
+    """
     try:
         factory = BagFileParserFactory(rosbag_path)
         parser = factory.get_parser()
@@ -128,7 +141,7 @@ def extract_ros2bag_lidar_cmd(rosbag_path: str, time_str: str, output_path: str)
         sys.exit(2)
  
     pointcloud_count = 0
-    divisor = max(1, factory.duration // 300000000000 + 2)  # ~5 min splits
+    divisor = max(1, factory.duration // 300000000000 + 2)  
     print(f"Splitting processing into {divisor} batch interval(s)...")
  
     start_time = factory.start_time
@@ -146,7 +159,7 @@ def extract_ros2bag_lidar_cmd(rosbag_path: str, time_str: str, output_path: str)
     if data_sorting:
         _ = parser.get_messages("/driving_mode_stamped")
  
-    cmd_vel_topic_list = parser.get_messages("/joy_cmd_vel_stamped")
+    cmd_vel_topic_list = parser.get_messages("/cmd_vel_stamped")
     print(f"Total cmd_vel messages: {len(cmd_vel_topic_list)}")
     if cmd_vel_topic_list:
         print(f"First cmd_vel timestamp: {cmd_vel_topic_list[0][0]}")
@@ -157,10 +170,10 @@ def extract_ros2bag_lidar_cmd(rosbag_path: str, time_str: str, output_path: str)
         batch_end = start_time + batch_duration * (j + 1)
  
         front_lidar_topic_list = parser.get_messages(
-            "/lidar_localisation/front/cloud", start_time=batch_start, end_time=batch_end
+            "/sensing/lidar/rear/pointcloud_raw_ex", start_time=batch_start, end_time=batch_end
         )
         rear_lidar_topic_list = parser.get_messages(
-            "/lidar_localisation/rear/cloud", start_time=batch_start, end_time=batch_end
+            "/sensing/lidar/front/pointcloud_raw_ex", start_time=batch_start, end_time=batch_end
         )
  
         print(f"Batch {j}: front_lidar={len(front_lidar_topic_list)}, rear_lidar={len(rear_lidar_topic_list)}")
@@ -245,9 +258,9 @@ def extract_ros2bag_lidar_cmd(rosbag_path: str, time_str: str, output_path: str)
  
 def main():
     parser = argparse.ArgumentParser(description="Extract LiDAR and Command Vel data from ROS 2 bag files.")
-    parser.add_argument("-p", "--path", type=str, default="/home/ubuntu22/jeremybutson/newbag/",
+    parser.add_argument("-p", "--path", type=str, default="/media/ubuntu22/data/campus_data/Loop8/jjPro_ToBayliss_2026-08-24_16-06-31",
                         help="Ros2bag file directory path.")
-    parser.add_argument("-o", "--output", type=str, default="/home/ubuntu22/jeremybutson/output",
+    parser.add_argument("-o", "--output", type=str, default="/media/ubuntu22/RAID1/jeremy/baylissloop8",
                         help="Target output directory path.")
     parser.add_argument("-t", "--time", type=str, default="00:00:00.00",
                         help="Time elapsed since start of ros2bag (<hh:mm:ss.ff>).")

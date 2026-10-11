@@ -82,8 +82,8 @@ class LidarCmdVelPublisher(Node):
         super().__init__("lidar_cmd_vel_publisher")
 
         # ROS2 Topic dexcs
-        self.declare_parameter("front_lidar_topic", "/lidar_localisation/front/cloud")
-        self.declare_parameter("rear_lidar_topic", "/lidar_localisation/rear/cloud")
+        self.declare_parameter("front_lidar_topic", "/sensing/lidar/front/pointcloud_raw_ex")
+        self.declare_parameter("rear_lidar_topic", "/sensing/lidar/rear/pointcloud_raw_ex")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("checkpoint_path", "/workspace/drive_ws/models/pointcam_shuttle_lane_following.pth")
         self.declare_parameter("n_patches", 64)

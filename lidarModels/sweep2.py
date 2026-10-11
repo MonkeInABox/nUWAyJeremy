@@ -1,4 +1,5 @@
-
+# Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving
+# for doing multiple runs of the pointcam model
 
 import csv
 import itertools
@@ -46,24 +47,24 @@ SWEEP_LIST = [
     {**BASELINE, "run_label": "freeze_encoder", "freeze_encoder": True},
     {**BASELINE, "run_label": "freeze_encoder", "freeze_encoder": True},
     {**BASELINE, "run_label": "freeze_encoder", "freeze_encoder": True},
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
-    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   # same 2048 coverage, different granularity
+    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_undersampled", "n_patches": 32, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_oversampled", "n_patches": 128, "points_per_patch": 32},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
+    {**BASELINE, "run_label": "patches_fewer_larger", "n_patches": 32, "points_per_patch": 64},   
 
-    # --- regularization ------------------------------------------------------
+
     {**BASELINE, "run_label": "drop_path_0.0", "drop_path_rate": 0.0},
     {**BASELINE, "run_label": "drop_path_0.0", "drop_path_rate": 0.0},
     {**BASELINE, "run_label": "drop_path_0.0", "drop_path_rate": 0.0},
@@ -186,7 +187,7 @@ def config_to_argv(config, run_name):
         flag = f"--{key}"
         if isinstance(value, bool):
             if value:
-                argv.append(flag)  # store_true flags: only pass when True
+                argv.append(flag)  
         else:
             argv.extend([flag, str(value)])
     return argv

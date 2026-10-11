@@ -1,15 +1,5 @@
 """
-The shuttle bus driving model (PointMamba backbone + speed/steering heads).
- 
-Mirrors driveModel.py (the PointCAM version) so the two can be swept and
-compared with the same methodology. Pulled into its own module for the same
-reason as the PointCAM version: keeps training-only side effects out of
-anything that just wants to import the model.
- 
-Depends on modelMamba.py (your original PointMamba model, copied verbatim),
-which in turn needs block.py and misc.py sitting alongside it -- those
-aren't something I generated, they're your original PointMamba dependencies
-and need to already exist in this directory.
+# Jeremy Butson, adapting Quirke-Brown, the University of Western Australia REV Project nUWAy shuttle driving
 """
  
 import torch
@@ -52,11 +42,6 @@ class drivePointMamba(nn.Module):
                  drop_out_block=drop_out_block,
                  use_cls_token=use_cls_token,
         )
- 
-        # Not present in the original script -- added so freeze_encoder can
-        # be swept the same way it is for the PointCAM version, as a direct
-        # comparison point (does freezing cost/save the same thing on both
-        # architectures?).
         self.freeze_encoder = freeze_encoder
         if self.freeze_encoder:
             self.vision_model.eval()

@@ -41,33 +41,33 @@ BASELINE = {
 SWEEP_LIST = [
     {**BASELINE, "run_label": "baseline"},
  
-    # --- encoder / grouping -----------------------------------------------
+
     {**BASELINE, "run_label": "freeze_encoder", "freeze_encoder": True},
-    {**BASELINE, "run_label": "groups_undersampled", "num_group": 32, "group_size": 32},   # 1024 pts covered
-    {**BASELINE, "run_label": "groups_oversampled", "num_group": 128, "group_size": 32},   # 4096 pts covered
-    {**BASELINE, "run_label": "groups_fewer_larger", "num_group": 32, "group_size": 64},   # same 2048 coverage, different granularity
+    {**BASELINE, "run_label": "groups_undersampled", "num_group": 32, "group_size": 32},   
+    {**BASELINE, "run_label": "groups_oversampled", "num_group": 128, "group_size": 32},   
+    {**BASELINE, "run_label": "groups_fewer_larger", "num_group": 32, "group_size": 64},   
  
-    # --- regularization ------------------------------------------------------
+
     {**BASELINE, "run_label": "drop_path_0.0", "drop_path": 0.0},
     {**BASELINE, "run_label": "drop_path_0.3", "drop_path": 0.3},
     {**BASELINE, "run_label": "weight_decay_0.0", "weight_decay": 0.0},
     {**BASELINE, "run_label": "weight_decay_0.2", "weight_decay": 0.2},
  
-    # --- learning rate magnitude -----------------------------------------------
+
     {**BASELINE, "run_label": "lr_1e-3", "lr": 1e-3},
     {**BASELINE, "run_label": "lr_1e-5", "lr": 1e-5},
  
-    # --- learning rate schedule (gamma = ReduceLROnPlateau decay factor) -------
+
     {**BASELINE, "run_label": "gamma_0.3_very_aggressive", "gamma": 0.3},
     {**BASELINE, "run_label": "gamma_0.5_aggressive", "gamma": 0.5},
     {**BASELINE, "run_label": "gamma_0.6", "gamma": 0.6},
     {**BASELINE, "run_label": "gamma_0.7", "gamma": 0.7},
-    # gamma_0.8 is the baseline run above -- no need to repeat it here.
+
     {**BASELINE, "run_label": "gamma_0.9", "gamma": 0.9},
     {**BASELINE, "run_label": "gamma_0.95_gentle", "gamma": 0.95},
     {**BASELINE, "run_label": "gamma_0.99_very_gentle", "gamma": 0.99},
  
-    # --- batch size -----------------------------------------------------------
+
 
     {**BASELINE, "run_label": "batch_size_32", "batch_size": 32},
     {**BASELINE, "run_label": "batch_size_128", "batch_size": 128},

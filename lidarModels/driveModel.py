@@ -1,4 +1,5 @@
 """
+Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving
 Driving model
 """
 
@@ -12,6 +13,8 @@ from model import PointCAMBackbone
 
 
 def fps_downsample(points, n_fps, n_sample):
+    """farthest point sampling using torch
+    """
     _, fps_idx = sample_farthest_points(
         points[..., :3], K=n_fps, random_start_point=True
     )
@@ -20,6 +23,8 @@ def fps_downsample(points, n_fps, n_sample):
 
 
 class drivePointCAM(nn.Module):
+    """creating CAM backbone
+    """
     def __init__(
             self,
             *,

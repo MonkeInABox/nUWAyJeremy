@@ -1,17 +1,21 @@
 import torch
 import torch.nn as nn
- 
+
+# Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving
+
+# PointCAM  (https://github.com/szacho/pointcam) 
+
 from omegaconf import OmegaConf
- 
+
 from pointcam.models import PointCAM
 from pointcam.configs import PointCAMConfig
 from pointcam.utils.crop import PatchFinder
- 
- 
+
+
 class PointCAMBackbone(nn.Module):
- 
-    FEATURE_DIM = 768  # 2 * encoder.embedding_dim (384 cls + 384 pooled patch feats)
- 
+
+    FEATURE_DIM = 768 
+
     def __init__(
         self,
         checkpoint_path: str = None,
@@ -22,61 +26,43 @@ class PointCAMBackbone(nn.Module):
         cfg=None,
     ):
         super().__init__()
- 
+
         if checkpoint_path is not None:
             print(f'PointCAM Loading pretrained checkpoint from {checkpoint_path}')
             self.pointcam = PointCAM.from_exported_checkpoint(
                 checkpoint_path, drop_path_rate=drop_path_rate
             )
         else:
-            print('PointCAM No checkpoint given')
+            print('PointCAM No checkpoint given, training PointCAM encoder from scratch!!!')
             self.pointcam = PointCAM(
                 cfg=cfg if cfg is not None else OmegaConf.structured(PointCAMConfig)
             )
- 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.pointcam = self.pointcam.to(device=device)
- 
+
+        self.pointcam = self.pointcam.to(device="cuda")
+
         self.freeze_encoder = freeze_encoder
         if self.freeze_encoder:
             self.pointcam.eval()
             for p in self.pointcam.parameters():
                 p.requires_grad = False
- 
 
         self.patch_finder = PatchFinder(n_patches, points_per_patch)
- 
+
     def train(self, mode: bool = True):
         super().train(mode)
         if self.freeze_encoder:
             self.pointcam.eval()
         return self
- 
-    def make_patched_cloud(self, pts):
-        xyz = self.patch_finder(pts.contiguous())
-        return xyz.to(pts.device)
 
     def forward(self, pts):
-        xyz = self.make_patched_cloud(pts)
- 
+
+        xyz = self.patch_finder(pts.contiguous())
+        xyz = xyz.to(pts.device)
+
         if self.freeze_encoder:
             with torch.no_grad():
                 features = self.pointcam(xyz)
         else:
             features = self.pointcam(xyz)
- 
-        return features  # (B, 768)
 
-    def forward_masked(self, pts, detach_masks: bool = False):
-        xyz = self.make_patched_cloud(pts)
-        mask_probs = self.pointcam.masknet(xyz)
-        masks = mask_probs.permute(2, 0, 1).unsqueeze(-1)
-
-        if detach_masks:
-            masks = masks.detach()
-
-        features = torch.stack(
-            [self.pointcam.student(xyz, mask=mask, pool=True) for mask in masks],
-            dim=0,
-        )
-        return features, masks
+        return features  

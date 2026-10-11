@@ -1,40 +1,42 @@
+
+# Jeremy Butson, adapting Quirke-Brown and PointMamba, the University of Western Australia REV Project nUWAy shuttle driving
+
 import torch
 import torch.nn as nn
 import numpy as np
-
+ 
 from functools import partial
-
+ 
 import math
-
-import misc
-
+ 
+from pytorch3d.ops import sample_farthest_points
+ 
 from timm.models.layers import trunc_normal_
 from timm.models.layers import DropPath
-
+ 
 #from extensions.chamfer_dist import ChamferDistanceL1, ChamferDistanceL2
 from mamba_ssm.modules.mamba_simple import Mamba
-
+ 
 try:
     from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
-
+ 
 #from knn_cuda import KNN
 from block import Block
-
+ 
 class KNN(nn.Module):
     """Drop-in for knn_cuda.KNN with transpose_mode=True."""
     def __init__(self, k, transpose_mode=True):
         super().__init__()
         self.k = k
-
+ 
     @torch.no_grad()
     def forward(self, ref, query):
-        # ref: (B, N, C), query: (B, M, C) -> dist, idx both (B, M, k)
-        dist = torch.cdist(query, ref)          # (B, M, N)
+        dist = torch.cdist(query, ref)          
         d, idx = dist.topk(self.k, dim=-1, largest=False)
         return d, idx
-
+ 
 class Encoder(nn.Module):
     def __init__(self, encoder_channel):
         super().__init__()
@@ -51,8 +53,13 @@ class Encoder(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv1d(512, self.encoder_channel, 1)
         ).to(device="cuda")
-
+ 
     def forward(self, point_groups):
+        """forward path
+
+        Returns:
+            _type_: feature shapes
+        """
         bs, g, n, _ = point_groups.shape
         point_groups = point_groups.reshape(bs * g, n, 3)
         feature = self.first_conv(point_groups.transpose(2, 1))
@@ -68,11 +75,24 @@ class Group(nn.Module):
         self.num_group = num_group
         self.group_size = group_size
         self.knn = KNN(k=self.group_size, transpose_mode=True)
+ 
+    def _fps(self, xyz, num_group):
+        """farthest point sampling
 
+        Args:
+            xyz (_type_): centre
+            num_group (_type_): _description_
+
+        Returns:
+            centres: the centres of the FPS
+        """
+        centers, _ = sample_farthest_points(xyz, K=num_group, random_start_point=True)
+        return centers
+ 
     def forward(self,  xyz):
         batch_size, num_points, _ = xyz.shape
-        center = misc.fps(xyz, self.num_group)
-
+        center = self._fps(xyz, self.num_group)
+ 
         _, idx = self.knn(xyz, center)
         assert idx.size(1) == self.num_group
         assert idx.size(2) == self.group_size
@@ -98,11 +118,11 @@ class Group(nn.Module):
         # print(neighborhood.shape)
         # last dimension changed to 4 from 3 to add in intensity value
         neighborhood = neighborhood.view(batch_size, self.num_group, self.group_size, 3).contiguous()
-
+ 
         neighborhood = neighborhood - center.unsqueeze(2)
         return neighborhood, center
     
-
+ 
 def _init_weights(
         module,
         n_layer,
@@ -116,16 +136,16 @@ def _init_weights(
                 nn.init.zeros_(module.bias)
     elif isinstance(module, nn.Embedding):
         nn.init.normal_(module.weight, std=initializer_range)
-
+ 
     if rescale_prenorm_residual:
         for name, p in module.named_parameters():
             if name in ["out_proj.weight", "fc2.weight"]:
                 nn.init.kaiming_uniform_(p, a=math.sqrt(5))
                 with torch.no_grad():
                     p /= math.sqrt(n_residuals_per_layer * n_layer)
-
-
-
+ 
+ 
+ 
 def create_block(
         d_model,
         ssm_cfg=None,
@@ -141,7 +161,7 @@ def create_block(
     if ssm_cfg is None:
         ssm_cfg = {}
     factory_kwargs = {"device": device, "dtype": dtype}
-
+ 
     mixer_cls = partial(Mamba, layer_idx=layer_idx, **ssm_cfg, **factory_kwargs)
     norm_cls = partial(
         nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
@@ -156,7 +176,7 @@ def create_block(
     )
     block.layer_idx = layer_idx
     return block
-
+ 
 class MixerModel(nn.Module):
     def __init__(self,
                  d_model: int,
@@ -179,7 +199,7 @@ class MixerModel(nn.Module):
         if self.fused_add_norm:
             if layer_norm_fn is None or rms_norm_fn is None:
                 raise ImportError("Failed to import Triton LayerNorm / RMSNorm kernels")
-
+ 
             
         self.layers = nn.ModuleList(
             [
@@ -197,11 +217,11 @@ class MixerModel(nn.Module):
                 for i in range(n_layer)
             ]
         )
-
+ 
         self.norm_f = (nn.LayerNorm if not rms_norm else RMSNorm)(
             d_model, eps=norm_epsilon, **factory_kwargs
         )
-
+ 
         self.apply(
             partial(
                 _init_weights,
@@ -211,7 +231,7 @@ class MixerModel(nn.Module):
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.drop_out_in_block = nn.Dropout(drop_out_in_block) if drop_out_in_block > 0. else nn.Identity()
-
+ 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
         return {
             i: layer.allocate_inference_cache(batch_size, max_seqlen, dtype=dtype, **kwargs)
@@ -241,7 +261,7 @@ class MixerModel(nn.Module):
                 prenorm=False,
                 residual_in_fp32=self.residual_in_fp32,
             )
-
+ 
         return hidden_states
     
 class PointMamba(nn.Module):
@@ -261,37 +281,37 @@ class PointMamba(nn.Module):
                  **kwargs):
         super(PointMamba, self).__init__()
         # self.config = config
-
+ 
         self.trans_dim = trans_dim
         self.depth = depth
         self.cls_dim = cls_dim
-
-
+ 
+ 
         self.group_size = group_size
         self.num_group = num_group
         self.encoder_dims = encoder_dims
-
+ 
         self.group_divider = Group(num_group=self.num_group, group_size=self.group_size)
-
+ 
         self.encoder = Encoder(encoder_channel=self.encoder_dims)
-
+ 
         self.use_cls_token = use_cls_token
         self.drop_path = drop_path
         self.rms_norm = rms_norm
         self.drop_out_in_block = drop_out_block
-
+ 
         if self.use_cls_token:
             self.cls_token = nn.Parameter(torch.zeros(1, 1, self.trans_dim))
             self.cls_pos = nn.Parameter(torch.randn(1, 1, self.trans_dim))
             trunc_normal_(self.cls_token, std=.02)
             trunc_normal_(self.cls_pos, std=.02)
-
+ 
         self.pos_embed = nn.Sequential(
             nn.Linear(3, 128),
             nn.GELU(),
             nn.Linear(128, self.trans_dim)
         ).to(device="cuda")
-
+ 
         self.blocks = MixerModel(d_model=self.trans_dim,
                                  n_layer=self.depth,
                                  rms_norm=self.rms_norm,
@@ -299,11 +319,11 @@ class PointMamba(nn.Module):
                                  drop_path=self.drop_path).to(device="cuda")
         
         self.norm = nn.LayerNorm(self.trans_dim).to(device="cuda")
-
+ 
         self.HEAD_CHANEL = 1
         if self.use_cls_token:
             self.HEAD_CHANEL += 1
-
+ 
         self.cls_head_finetune = nn.Sequential(
             nn.Linear(self.trans_dim * self.HEAD_CHANEL, 256),
             nn.BatchNorm1d(256),
@@ -315,14 +335,14 @@ class PointMamba(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(256, self.cls_dim)
         ).to(device="cuda")
-
+ 
         self.build_loss_func()
-
+ 
         self.drop_out = nn.Dropout(drop_out)
-
+ 
     def build_loss_func(self):
         self.loss_ce = nn.CrossEntropyLoss()
-
+ 
     def get_loss_acc(self, ret, gt):
         loss = self.loss_ce(ret, gt.long())
         pred = ret.argmax(-1)
@@ -333,7 +353,7 @@ class PointMamba(nn.Module):
         if bert_ckpt_path is not None:
             ckpt = torch.load(bert_ckpt_path)
             base_ckpt = {k.replace("module.", ""): v for k, v in ckpt['base_model'].items()}
-
+ 
             for k in list(base_ckpt.keys()):
                 if k.startswith('MAE_encoder'):
                     base_ckpt[k[len('MAE_encoder.'):]] = base_ckpt[k]
@@ -341,20 +361,20 @@ class PointMamba(nn.Module):
                 elif k.startswith('base_model'):
                     base_ckpt[k[len('base_model.'):]] = base_ckpt[k]
                     del base_ckpt[k]
-
+ 
             incompatible = self.load_state_dict(base_ckpt, strict=False)
-
+ 
             if incompatible.missing_keys:
                 print(f'[Mamba] missing_keys: {incompatible.missing_keys}')
-
+ 
             if incompatible.unexpected_keys:
                 print(f'[Mamba] unexpected_keys: {incompatible.unexpected_keys}')
-
+ 
             print(f'[Mamba] Successful Loading the ckpt from {bert_ckpt_path}')
         else:
             print('Training from scratch!!!')
             self.apply(self._init_weights)
-
+ 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
@@ -368,14 +388,14 @@ class PointMamba(nn.Module):
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
                 
-
+ 
     def forward(self, pts):
         # print(pts.shape)
         neighborhood, center = self.group_divider(pts)
         group_input_tokens = self.encoder(neighborhood)
         center = center.to(device="cuda")
         pos = self.pos_embed(center)
-
+ 
         center_x = center[:, :, 0].argsort(dim=-1)[:, :, None]
         center_y = center[:, :, 1].argsort(dim=-1)[:, :, None]
         center_z = center[:, :, 2].argsort(dim=-1)[:, :, None]
@@ -394,9 +414,9 @@ class PointMamba(nn.Module):
         group_input_tokens = torch.cat([group_input_tokens_x, group_input_tokens_y, group_input_tokens_z],
                                        dim=1)
         pos = torch.cat([pos_x, pos_y, pos_z], dim=1)
-
+ 
         x = group_input_tokens
-
+ 
         x = self.drop_out(x)
         x = self.blocks(x, pos)
         x = self.norm(x)

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+# Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving
+
 # PointCAM  (https://github.com/szacho/pointcam) 
 
 from omegaconf import OmegaConf

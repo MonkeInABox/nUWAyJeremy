@@ -1,3 +1,5 @@
+# Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -215,6 +217,8 @@ if __name__ == "__main__":
     parser.add_argument("--load_model", action="store_true")
     parser.add_argument("--fine_tune_model", action="store_true")
     parser.add_argument("model_type", default="lane_following", type=str, nargs='?')
+
+    # --- Hyperparameters exposed for sweeping --------------------------------
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.05)
     parser.add_argument("--gamma", type=float, default=0.8, help="ReduceLROnPlateau decay factor")
@@ -229,6 +233,7 @@ if __name__ == "__main__":
         help="Path to a pretrained PointCAM checkpoint to warm-start from, or omit to train from scratch",
     )
 
+    # --- Sweep bookkeeping -----------------------------------------------------
     parser.add_argument(
         "--results_csv", type=str, default="sweep_results.csv",
         help="CSV file this run's final metrics + hyperparameters get appended to",
@@ -236,6 +241,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--run_name", type=str, default=None,
         help="Optional label for this run (first column in results_csv). Defaults to model_name.",
+    )
+    parser.add_argument(
+        "--config_label", type=str, default=None,
+        help="Sweep config identifier shared by all repeats of the same hyperparameter combo "
+             "(e.g. 'lr_1e-3'). Written as its own results_csv column so repeats can be "
+             "grouped/averaged without parsing run_name strings.",
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=1,
+        help="Which repeat of config_label this run is (1, 2, 3, ...). Written as its own column.",
     )
 
     args = parser.parse_args()
@@ -247,6 +262,8 @@ if __name__ == "__main__":
     npoints = 3072
     points_all = 4300
     best_loss = 100000
+    best_val_loss = 100000
+    best_val_epoch = None
 
     model_path_name = "pointcam_shuttle_lane_following_48_0.0009_0.7621_0.8276.pth"
     checkpoint = None
@@ -366,7 +383,7 @@ if __name__ == "__main__":
             new_lr = current_lr * 0.9
             param_group['lr'] = new_lr
             print(f"LR updated: {current_lr:.8f} → {new_lr:.8f}")
-
+    # scheduler = StepLR(optimizer, step_size=10, gamma=gamma)
     scheduler = ReduceLROnPlateau(optimizer, 'min', factor=gamma, patience=3, threshold=0.0001, threshold_mode='abs', verbose=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -587,11 +604,15 @@ if __name__ == "__main__":
             Steering_Angles_All = []
             del train_data, train_loader, val_data, val_loader, test_data, test_loader
 
-        total_epoch_accuracy1 = total_epoch_accuracy1 / train_len
-        total_epoch_accuracy2 = total_epoch_accuracy2 / train_len
+        # .item() here converts these from CUDA tensors to plain Python
+        # floats -- without it, the results_csv row ends up with literal
+        # strings like "tensor(0.9113, device='cuda:0')" instead of numbers,
+        # which breaks pandas/any downstream numeric analysis of the CSV.
+        total_epoch_accuracy1 = (total_epoch_accuracy1 / train_len).item()
+        total_epoch_accuracy2 = (total_epoch_accuracy2 / train_len).item()
         total_epoch_loss = total_epoch_loss / train_len
-        total_epoch_val_accuracy1 = total_epoch_val_accuracy1 / val_len
-        total_epoch_val_accuracy2 = total_epoch_val_accuracy2 / val_len
+        total_epoch_val_accuracy1 = (total_epoch_val_accuracy1 / val_len).item()
+        total_epoch_val_accuracy2 = (total_epoch_val_accuracy2 / val_len).item()
         total_epoch_val_loss = total_epoch_val_loss / val_len
         writer.add_scalar("Loss/Train", total_epoch_loss, epoch)
         writer.add_scalar("Loss/Validation", total_epoch_val_loss, epoch)
@@ -623,6 +644,26 @@ if __name__ == "__main__":
                 'loss': total_epoch_loss
             }, save_name)
 
+        # Separately track the best VALIDATION epoch, not just best train
+        # epoch. For long runs these can diverge (the model can keep
+        # improving on train while val gets worse -- classic overfitting),
+        # and without this you'd have no checkpoint of the actually-best
+        # model, and no way to tell from results_csv alone whether "final"
+        # epoch numbers reflect the best point in training or an
+        # already-overfit one.
+        if best_val_loss > total_epoch_val_loss:
+            best_val_loss = total_epoch_val_loss
+            best_val_epoch = epoch
+
+            best_val_save_name = f"pointcam_shuttle_{model_name}_bestval_{epoch+1}_{total_epoch_val_loss:.4f}_{total_epoch_val_accuracy1:.4f}_{total_epoch_val_accuracy2:.4f}.pth"
+
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_loss': total_epoch_val_loss
+            }, best_val_save_name)
+
         scheduler.step(total_epoch_val_loss)
 
         for i, param_group in enumerate(optimizer.param_groups):
@@ -643,11 +684,13 @@ if __name__ == "__main__":
     writer.flush()
     writer.close()
 
-
+    # --- Append this run's results to the sweep CSV -----------------------------
     total_training_time = time.time() - sweep_start_time
 
     results_row = {
         "run_name": args.run_name or model_name,
+        "config_label": args.config_label or "",
+        "repeat": args.repeat,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "model_type": args.model_type,
         "n_patches": args.n_patches,
@@ -662,6 +705,8 @@ if __name__ == "__main__":
         "epochs_requested": args.epochs,
         "epochs_completed": epoch + 1,
         "best_train_loss": best_loss,
+        "best_val_loss": best_val_loss,
+        "best_val_epoch": (best_val_epoch + 1) if best_val_epoch is not None else "",
         "final_train_loss": total_epoch_loss,
         "final_train_accuracy1": total_epoch_accuracy1,
         "final_train_accuracy2": total_epoch_accuracy2,

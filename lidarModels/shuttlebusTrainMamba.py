@@ -1,3 +1,7 @@
+# Jeremy Butson, adapting Quirke-Brown and PointMamba, the University of Western Australia REV Project nUWAy shuttle driving
+
+
+
 import torch
 from torch import nn
 import torch.nn.functional as F
