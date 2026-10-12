@@ -1,9 +1,9 @@
-# validate_ensemble.py
+# Jeremy Butson, adapting (https://github.com/szacho/pointcam) to the University of Western Australia REV Project nUWAy shuttle driving and PointMamba
+
 import numpy as np
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 def main():
-    # 1. Load the generated predictions and targets
     try:
         mamba_preds = np.load("mamba_preds.npy")
         cam_preds = np.load("cam_preds.npy")
@@ -14,7 +14,6 @@ def main():
 
     print(f"Loaded shapes -> mamba_preds: {mamba_preds.shape}, cam_preds: {cam_preds.shape}, targets: {targets.shape}")
 
-    # 2. Handle shape mismatches
     if mamba_preds.shape != cam_preds.shape:
         print("Warning: Shape mismatch detected between model predictions!")
         min_len = min(mamba_preds.shape[0], cam_preds.shape[0], targets.shape[0])
@@ -24,7 +23,6 @@ def main():
         cam_preds = cam_preds[:min_len]
         targets = targets[:min_len]
 
-    # Squeeze extra trailing dimensions if necessary
     if mamba_preds.ndim > 1 and mamba_preds.shape[-1] == 1:
         mamba_preds = mamba_preds.squeeze(-1)
     if cam_preds.ndim > 1 and cam_preds.shape[-1] == 1:
@@ -34,13 +32,10 @@ def main():
 
     assert mamba_preds.shape == cam_preds.shape, f"Still unequal shapes: {mamba_preds.shape} vs {cam_preds.shape}"
 
-    # 3. Calculate ensemble predictions
     ensemble_preds = (mamba_preds + cam_preds) / 2.0
     is_multi_output = (ensemble_preds.ndim == 2 and ensemble_preds.shape[1] >= 2)
 
-    # 4. Per-epoch / per-chunk breakdown
-    # Assuming 1595 samples can be split into chunks (e.g., per epoch or per batch of size N)
-    # Let's define chunk size (change batch/epoch size if yours is different, e.g., 50 or 100 samples per epoch validation)
+
     chunk_size = 50 
     num_chunks = int(np.ceil(len(ensemble_preds) / chunk_size))
 
@@ -75,7 +70,6 @@ def main():
             mse = mean_squared_error(chunk_targets, chunk_preds)
             print(f"{i+1:<12} | {mae:<12.4f} | {mse:<12.4f} | {'N/A':<12} | {'N/A':<12}")
 
-    # 5. Overall summary
     if is_multi_output:
         speed_preds_flat = ensemble_preds[:, 0]
         speed_targets_flat = targets[:, 0]
